@@ -10,6 +10,10 @@
   
 - DQN与Q learning一个很大的不同是，他的初始化q值是乱的
 
+- 训练收敛情况太吃超参数的设置了
+
+- 遗留：double DQN、Prioritized Experience Replay、dueling DQN可以来解决over estimation和收敛过慢的问题
+
 
 
 ### readme ###
@@ -17,6 +21,7 @@
 - main.py文件是我写的，包括训练和运行，部分莫烦源代码的功能没写
 - temp.py是按照莫烦的tf1程序改成tf2的
 - tf1和tf2的test.py是例程
+- memory的格式，除了统一的array形式，分开存应该也挺好实现
 
 
 
