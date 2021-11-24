@@ -59,11 +59,12 @@ for i_episode in range(3000):
 
             vt = RL.learn()
 
-            if i_episode == 0:
-                plt.plot(vt)    # plot the episode vt
-                plt.xlabel('episode steps')
-                plt.ylabel('normalized state-action value')
-                plt.show()
+            # if i_episode == 0:
+            #     plt.plot(vt)    # plot the episode vt
+            #     plt.xlabel('episode steps')
+            #     plt.ylabel('normalized state-action value')
+            #     plt.show()
+
             break
 
         observation = observation_
