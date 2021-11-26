@@ -13,8 +13,7 @@ gym: 0.8.0
 
 import numpy as np
 import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras import layers, initializers, optimizers
+from tensorflow.keras import layers, Sequential, optimizers
 
 # reproducible
 np.random.seed(1)
@@ -39,42 +38,87 @@ class PolicyGradient:
 
         self._build_net()
 
+        # self.sess = tf.Session()
+
         if output_graph:
             # $ tensorboard --logdir=logs
             # http://0.0.0.0:6006/
             # tf.train.SummaryWriter soon be deprecated, use following
-            tf.summary.FileWriter("logs/", self.sess.graph)
+            # tf.summary.FileWriter("logs/", self.sess.graph)
+            pass
 
-    def custom_loss(self, tf_vt):
-        def loss(y_true, y_pred):
-            neg_log_prob = tf.reduce_sum(-tf.math.log(y_true) * y_pred, axis=1)
-            res = tf.reduce_mean(neg_log_prob * tf_vt)
-            return res
-        return loss
+        # self.sess.run(tf.global_variables_initializer())
 
     def _build_net(self):
-        self.model = keras.Sequential([
+        self.all_act_prob = Sequential([
             layers.Dense(10,
-                         activation='tanh',
-                         kernel_initializer=initializers.RandomNormal(stddev=0.3),
-                         bias_initializer=initializers.Constant(value=0.1)
+                         activation='relu',
+                         kernel_initializer=tf.random_normal_initializer(mean=0, stddev=0.3),
+                         bias_initializer=tf.constant_initializer(0.1)
                          ),
             layers.Dense(self.n_actions,
-                         kernel_initializer=initializers.RandomNormal(stddev=0.3),
-                         bias_initializer=initializers.Constant(value=0.1)
-                         ),
-            layers.Softmax()
+                         activation=tf.keras.activations.softmax,
+                         kernel_initializer=tf.random_normal_initializer(mean=0, stddev=0.3),
+                         bias_initializer=tf.constant_initializer(0.1)
+                         )
         ])
-        self.model.compile(optimizer=optimizers.Adam(learning_rate=self.lr))
-        self.model.build(input_shape=(None, self.n_features))
-        self.model.summary()
+        self.optimizer = optimizers.SGD(learning_rate=self.lr)
+
+        # with tf.name_scope('inputs'):
+        #     self.tf_obs = tf.placeholder(tf.float32, [None, self.n_features], name="observations")
+        #     self.tf_acts = tf.placeholder(tf.int32, [None, ], name="actions_num")
+        #     self.tf_vt = tf.placeholder(tf.float32, [None, ], name="actions_value")
+        # # fc1
+        # layer = tf.layers.dense(
+        #     inputs=self.tf_obs,
+        #     units=10,
+        #     activation=tf.nn.tanh,  # tanh activation
+        #     kernel_initializer=tf.random_normal_initializer(mean=0, stddev=0.3),
+        #     bias_initializer=tf.constant_initializer(0.1),
+        #     name='fc1'
+        # )
+        # # fc2
+        # all_act = tf.layers.dense(
+        #     inputs=layer,
+        #     units=self.n_actions,
+        #     activation=None,
+        #     kernel_initializer=tf.random_normal_initializer(mean=0, stddev=0.3),
+        #     bias_initializer=tf.constant_initializer(0.1),
+        #     name='fc2'
+        # )
+        #
+        # self.all_act_prob = tf.nn.softmax(all_act, name='act_prob')  # use softmax to convert to probability
+
+        # with tf.name_scope('loss'):
+        #     # to maximize total reward (log_p * R) is to minimize -(log_p * R), and the tf only have minimize(loss)
+        #     neg_log_prob = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=all_act, labels=self.tf_acts)   # this is negative log of chosen action
+        #     # or in this way:
+        #     # neg_log_prob = tf.reduce_sum(-tf.log(self.all_act_prob)*tf.one_hot(self.tf_acts, self.n_actions), axis=1)
+        #     loss = tf.reduce_mean(neg_log_prob * self.tf_vt)  # reward guided loss
+        #
+        # with tf.name_scope('train'):
+        #     self.train_op = tf.train.AdamOptimizer(self.lr).minimize(loss)
+
+    def get_loss(self, observation, acts, vt):
+        out = self.all_act_prob(observation)
+        neg_log_prob = tf.reduce_sum(-tf.math.log(out) * tf.one_hot(acts, self.n_actions), axis=1)
+        loss = tf.reduce_mean(neg_log_prob * vt)
+        return loss
+
+    def get_grad(self, observation, acts, vt):
+        with tf.GradientTape() as tape:
+            loss = self.get_loss(observation, acts, vt)
+        grad = tape.gradient(loss, self.all_act_prob.trainable_variables)
+        return grad
+
+    def model_update(self, observation, acts, vt):
+        grads = self.get_grad(observation, acts, vt)
+        self.optimizer.apply_gradients(zip(grads, self.all_act_prob.trainable_variables))
 
     def choose_action(self, observation):
-        prob_weights = self.model.predict(observation[np.newaxis, :])
-        try:
-            action = np.random.choice(range(prob_weights.shape[1]), p=prob_weights.ravel())  # select action w.r.t the actions prob
-        except:
-            print('bug')
+        # prob_weights = self.sess.run(self.all_act_prob, feed_dict={self.tf_obs: observation[np.newaxis, :]})
+        prob_weights = self.all_act_prob.predict(observation[np.newaxis, :])
+        action = np.random.choice(range(prob_weights.shape[1]), p=prob_weights.ravel())  # select action w.r.t the actions prob
         return action
 
     def store_transition(self, s, a, r):
@@ -86,9 +130,13 @@ class PolicyGradient:
         # discount and normalize episode reward
         discounted_ep_rs_norm = self._discount_and_norm_rewards()
 
-
-        self.model.compile(loss=self.custom_loss(discounted_ep_rs_norm))
-        self.model.train_on_batch(np.vstack(self.ep_obs), tf.one_hot(np.array(self.ep_as), self.n_actions))
+        # train on episode
+        # self.sess.run(self.train_op, feed_dict={
+        #      self.tf_obs: np.vstack(self.ep_obs),  # shape=[None, n_obs]
+        #      self.tf_acts: np.array(self.ep_as),  # shape=[None, ]
+        #      self.tf_vt: discounted_ep_rs_norm,  # shape=[None, ]
+        # })
+        self.model_update(np.vstack(self.ep_obs), np.array(self.ep_as), discounted_ep_rs_norm)
 
         self.ep_obs, self.ep_as, self.ep_rs = [], [], []    # empty episode data
         return discounted_ep_rs_norm
