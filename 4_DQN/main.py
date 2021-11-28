@@ -141,10 +141,13 @@ def run_maze():
 
 if __name__ == "__main__":
     env = Maze()
-    # rl = Deep_Q_Network(env.n_actions, env.n_features, epsilon=0.9, epsilon_step=0)
-    # env.after(100, train_maze)
-    rl = Deep_Q_Network(env.n_actions, env.n_features, epsilon=0.9)
-    env.after(100, run_maze)
+
+    rl = Deep_Q_Network(env.n_actions, env.n_features, epsilon=0.9, epsilon_step=0)
+    env.after(100, train_maze)
+
+    # rl = Deep_Q_Network(env.n_actions, env.n_features, epsilon=0.9)
+    # env.after(100, run_maze)
+
     env.mainloop()
     rl.plot_cost()
     rl.eval_model.save_weights('train_model.h5')
